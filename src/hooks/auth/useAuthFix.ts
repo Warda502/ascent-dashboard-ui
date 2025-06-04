@@ -11,12 +11,15 @@ export const useAuthFix = () => {
       
       // Use a direct query that bypasses problematic RLS policies
       const { data: userData, error } = await supabase
-        .rpc('get_user_data_safe', { user_id: userId });
+        .from('users')
+        .select('id, uid, email, name, email_type, credits, expiry_time, two_factor_enabled, block, activate')
+        .eq('id', userId)
+        .limit(1)
+        .maybeSingle();
 
       if (error) {
-        console.error("Error fetching user data with RPC:", error);
-        // Fallback: try with service role if available
-        return await fetchUserDataFallback(userId);
+        console.error("Error fetching user data:", error);
+        return null;
       }
 
       if (!userData) {
