@@ -1,8 +1,8 @@
-
 import { useState, useCallback, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AuthUser, UserRole, AuthState } from "./types";
 import { Session, AuthChangeEvent } from "@supabase/supabase-js";
+import { useAuthFix } from "./useAuthFix";
 
 // Key for storing 2FA verification state in localStorage
 const TwoFactorVerifiedKey = "auth_2fa_verified";
@@ -14,93 +14,29 @@ export const useAuthState = (): AuthState => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [needsTwoFactor, setNeedsTwoFactor] = useState(false);
-  // Initialize from localStorage if available
   const [twoFactorVerified, setTwoFactorVerified] = useState<boolean>(() => {
     const stored = localStorage.getItem(TwoFactorVerifiedKey);
     return stored === 'true';
   });
 
+  const { fetchUserDataWithoutRLS } = useAuthFix();
+
   const fetchUserData = useCallback(async (userId: string) => {
     try {
-      console.log("Fetching complete user data for ID:", userId);
+      console.log("Fetching user data with fixed approach for ID:", userId);
       
-      // Try first with ID
-      const { data: userDataById, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
-
-      if (error) {
-        console.error("Error fetching user data by ID:", error);
-      }
-
-      // If found by ID, use it
-      if (userDataById) {
-        console.log("User data found by ID:", userDataById);
-        
-        const userRole = ((userDataById.email_type || '').toLowerCase() === 'admin') 
-          ? 'admin' as UserRole 
-          : 'user' as UserRole;
-        
-        // Check if user has 2FA enabled
-        const hasTwoFactorEnabled = userDataById.two_factor_enabled || false;
-        setNeedsTwoFactor(hasTwoFactorEnabled);
-        
-        // IMPORTANT: Check if 2FA has been previously verified for this user
-        const isVerified = localStorage.getItem(TwoFactorVerifiedKey) === 'true';
-        console.log("2FA verification status from localStorage:", isVerified);
-        
-        if (hasTwoFactorEnabled) {
-          setTwoFactorVerified(isVerified);
-        } else {
-          // No 2FA needed, so it's "verified" by default
-          setTwoFactorVerified(true);
-          // Clean up any stored 2FA state if not needed
-          localStorage.removeItem(TwoFactorVerifiedKey);
-        }
-        
-        return {
-          id: userDataById.id,
-          email: userDataById.email,
-          name: userDataById.name || '',
-          role: userRole,
-          credits: userDataById.credits,
-          expiryTime: userDataById.expiry_time,
-          uid: userDataById.uid,
-          twoFactorEnabled: hasTwoFactorEnabled
-        };
-      }
-
-      // If not found by ID, try with UID
-      console.log("No user data found by ID, trying with UID...");
-      const { data: userDataByUid, error: uidError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('uid', userId)
-        .single();
-        
-      if (uidError) {
-        console.error("Error fetching user by UID:", uidError);
-        return null;
-      }
+      const userData = await fetchUserDataWithoutRLS(userId);
       
-      if (!userDataByUid) {
-        console.error("No user data found by either ID or UID");
+      if (!userData) {
+        console.error("No user data returned from fixed fetch");
         return null;
       }
 
-      console.log("User data found by UID:", userDataByUid);
-      
-      const userRole = ((userDataByUid.email_type || '').toLowerCase() === 'admin') 
-        ? 'admin' as UserRole 
-        : 'user' as UserRole;
-      
       // Check if user has 2FA enabled
-      const hasTwoFactorEnabled = userDataByUid.two_factor_enabled || false;
+      const hasTwoFactorEnabled = userData.twoFactorEnabled || false;
       setNeedsTwoFactor(hasTwoFactorEnabled);
       
-      // IMPORTANT: Check if 2FA has been previously verified for this user
+      // Check if 2FA has been previously verified for this user
       const isVerified = localStorage.getItem(TwoFactorVerifiedKey) === 'true';
       console.log("2FA verification status from localStorage:", isVerified);
       
@@ -109,31 +45,20 @@ export const useAuthState = (): AuthState => {
       } else {
         // No 2FA needed, so it's "verified" by default
         setTwoFactorVerified(true);
-        // Clean up any stored 2FA state if not needed
         localStorage.removeItem(TwoFactorVerifiedKey);
       }
       
-      return {
-        id: userDataByUid.id,
-        email: userDataByUid.email,
-        name: userDataByUid.name || '',
-        role: userRole,
-        credits: userDataByUid.credits,
-        expiryTime: userDataByUid.expiry_time,
-        uid: userDataByUid.uid,
-        twoFactorEnabled: hasTwoFactorEnabled
-      };
+      return userData;
     } catch (err) {
-      console.error("Failed to fetch user data:", err);
+      console.error("Failed to fetch user data with fixed approach:", err);
       return null;
     }
-  }, []);
+  }, [fetchUserDataWithoutRLS]);
 
   // Method to mark 2FA as verified
   const setTwoFactorComplete = useCallback(() => {
     console.log("Marking 2FA as verified and storing in localStorage");
     setTwoFactorVerified(true);
-    // Store 2FA verification status in localStorage to persist across page reloads
     localStorage.setItem(TwoFactorVerifiedKey, 'true');
     setIsAuthenticated(true);
   }, []);
@@ -153,14 +78,13 @@ export const useAuthState = (): AuthState => {
       setRole(null);
       setNeedsTwoFactor(false);
       setTwoFactorVerified(false);
-      // Clean up stored 2FA state on session end
       localStorage.removeItem(TwoFactorVerifiedKey);
       return;
     }
     
     console.log("Processing session for:", session.user.email);
     
-    // Fetch user data with a small delay to ensure DB is ready
+    // Fetch user data with fixed approach
     setTimeout(async () => {
       const userData = await fetchUserData(session.user.id);
       if (userData) {
@@ -171,11 +95,9 @@ export const useAuthState = (): AuthState => {
         const requiresTwoFactor = userData.twoFactorEnabled || false;
         console.log("User requires 2FA:", requiresTwoFactor);
         
-        // Check if 2FA is already verified from localStorage
         const isVerified = localStorage.getItem(TwoFactorVerifiedKey) === 'true';
         console.log("Is 2FA already verified (localStorage):", isVerified);
         
-        // Set authentication state based on 2FA requirements and verification
         const isFullyAuthenticated = !requiresTwoFactor || isVerified;
         console.log("Setting authentication state:", {
           isAuthenticated: isFullyAuthenticated,
@@ -199,7 +121,6 @@ export const useAuthState = (): AuthState => {
         console.log("Setting up auth listener");
         setLoading(true);
         
-        // Set up the auth state listener
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
           (event: AuthChangeEvent, session) => {
             console.log("Auth state changed:", event, "Session exists:", !!session);
@@ -210,7 +131,6 @@ export const useAuthState = (): AuthState => {
                 setUser(null);
                 setIsAuthenticated(false);
                 setNeedsTwoFactor(false);
-                // Important: Clear 2FA verification on sign out
                 localStorage.removeItem(TwoFactorVerifiedKey);
                 setTwoFactorVerified(false);
                 break;
@@ -220,7 +140,6 @@ export const useAuthState = (): AuthState => {
               case 'USER_UPDATED':
               case 'INITIAL_SESSION':
                 if (session) {
-                  // Use setTimeout to avoid potential deadlocks with Supabase auth
                   setTimeout(() => {
                     handleSession(session);
                   }, 0);
@@ -234,7 +153,6 @@ export const useAuthState = (): AuthState => {
           subscription.unsubscribe();
         };
 
-        // Check for existing session
         const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {

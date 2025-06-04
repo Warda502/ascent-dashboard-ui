@@ -1,4 +1,3 @@
-
 import { useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -6,6 +5,7 @@ import { toast } from "@/components/ui/sonner";
 import { useLanguage } from "../useLanguage";
 import { AuthActions } from "./types";
 import { validate2FAToken } from "@/integrations/supabase/client";
+import { useAuthFix } from "./useAuthFix";
 
 // Key for tracking login status
 const LOGIN_IN_PROGRESS_KEY = "login_in_progress";
@@ -14,6 +14,7 @@ const TwoFactorVerifiedKey = "auth_2fa_verified";
 export const useAuthActions = (): AuthActions => {
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const { checkUserCredentials } = useAuthFix();
 
   const checkSession = useCallback(async () => {
     try {
@@ -45,7 +46,6 @@ export const useAuthActions = (): AuthActions => {
   const handleSessionExpired = useCallback(() => {
     console.log("Handling session expiration");
     
-    // Clear any 2FA verification state
     localStorage.removeItem(TwoFactorVerifiedKey);
     localStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
     
@@ -62,8 +62,35 @@ export const useAuthActions = (): AuthActions => {
     try {
       console.log("Attempting login for:", email);
       
-      // Set login in progress
       localStorage.setItem(LOGIN_IN_PROGRESS_KEY, 'true');
+      
+      // Use fixed credential check
+      const userData = await checkUserCredentials(email);
+      
+      if (userData) {
+        // Check if user is blocked
+        if (userData.block === 'Blocked') {
+          toast(t("accountBlocked"), {
+            description: t("accountBlockedDescription")
+          });
+          localStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
+          return false;
+        }
+
+        // Check if user has no credits (for regular users)
+        if (userData.email_type && userData.email_type.toLowerCase() !== 'admin') {
+          if (userData.credits) {
+            const creditsValue = parseFloat(userData.credits.toString().replace(/"/g, ''));
+            if (!isNaN(creditsValue) && creditsValue <= 0) {
+              toast(t("noCreditsLeft"), {
+                description: t("noCreditsLeftDescription")
+              });
+              localStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
+              return false;
+            }
+          }
+        }
+      }
       
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -78,29 +105,12 @@ export const useAuthActions = (): AuthActions => {
       
       console.log("Login successful via useAuthActions");
       
-      // Initial auth is successful, but we need to check if 2FA is required
-      // The actual navigation to dashboard will happen after 2FA verification if needed
-      const { data: userData, error: userDataError } = await supabase
-        .from('users')
-        .select('email_type, block, credits, two_factor_enabled')
-        .eq('id', data.session.user.id)
-        .maybeSingle();
-
-      if (userDataError) {
-        console.error("Error fetching user data after login:", userDataError);
-        localStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
-        throw userDataError;
-      }
-
-      console.log("User data from database:", userData);
-      
       // Only show success toast if 2FA is not required
       if (!userData?.two_factor_enabled) {
         toast(t("loginSuccess"), {
           description: t("welcomeBack")
         });
         
-        // No 2FA needed, clear flag and redirect
         localStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
         navigate('/dashboard');
       }
@@ -123,14 +133,12 @@ export const useAuthActions = (): AuthActions => {
       console.log("2FA validation result:", isValid);
       
       if (isValid) {
-        // Store 2FA verification in localStorage
         localStorage.setItem(TwoFactorVerifiedKey, 'true');
         
         toast(t("loginSuccess") || "Login successful", {
           description: t("welcomeBack") || "Welcome back"
         });
         
-        // Navigate after small delay to allow state updates
         setTimeout(() => {
           navigate('/dashboard');
         }, 200);
@@ -161,7 +169,6 @@ export const useAuthActions = (): AuthActions => {
       if (!isSessionValid) {
         console.log("No valid session found, cleaning up local state");
         
-        // Clear all authentication related storage
         localStorage.removeItem(TwoFactorVerifiedKey);
         localStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
         
@@ -172,7 +179,6 @@ export const useAuthActions = (): AuthActions => {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       
-      // Clear 2FA verification state on logout
       localStorage.removeItem(TwoFactorVerifiedKey); 
       localStorage.removeItem(LOGIN_IN_PROGRESS_KEY);
       
