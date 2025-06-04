@@ -73,45 +73,29 @@ export function AddUserDialog({
     setShowSubscriptionMonths(userType === "Monthly License");
   }, [userType]);
 
-  const validateForm = () => {
-    if (!name.trim()) {
-      toast(t("error") || "خطأ", {
-        description: "الاسم مطلوب"
-      });
-      return false;
-    }
-    
-    if (!email.trim() || !email.includes('@')) {
-      toast(t("error") || "خطأ", {
-        description: "البريد الإلكتروني غير صحيح"
-      });
-      return false;
-    }
-    
-    if (!password || password.length < 6) {
-      toast(t("error") || "خطأ", {
-        description: "كلمة المرور يجب أن تكون على الأقل 6 أحرف"
-      });
-      return false;
-    }
-    
-    if (!phone.trim()) {
-      toast(t("error") || "خطأ", {
-        description: "رقم الهاتف مطلوب"
-      });
-      return false;
-    }
-    
-    return true;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (!validateForm()) {
-      return;
+    // Get current date
+    const startDate = new Date().toISOString().split('T')[0];
+
+    // تحديد Expiry_Time بمنهج شبيه بالكود المطلوب:
+    let expiryDate: string;
+    if (userType === "Credits License") {
+      expiryDate = "Unlimited";
+    } else {
+      // نوع Monthly License
+      const monthsMap: Record<string, number> = {
+        "3": 3,
+        "6": 6,
+        "9": 9,
+        "12": 12
+      };
+      const monthsToAdd = monthsMap[subscriptionMonths] || 3;
+      const baseDate = new Date(startDate);
+      baseDate.setMonth(baseDate.getMonth() + monthsToAdd);
+      expiryDate = baseDate.toISOString().split('T')[0];
     }
-    
+
     const formattedCredits = credits + ".0";
     const newUser = {
       Name: name,
@@ -121,20 +105,20 @@ export function AddUserDialog({
       User_Type: userType,
       Phone: phone,
       Country: country,
+      Activate: "Active",
       Block: "Not Blocked",
-      subscriptionMonths: userType === "Monthly License" ? subscriptionMonths : undefined
+      Start_Date: startDate,
+      Expiry_Time: expiryDate,
+      Email_Type: "User",
+      Hwid: "Null"
     };
     
     try {
       setLoading(true);
-      console.log("Submitting new user:", {
-        ...newUser,
-        Password: "[HIDDEN]"
-      });
-      
+      console.log("Submitting new user:", newUser);
       const success = await onSave(newUser);
       
-      if (success === true) {
+      if (success === true) { // Fixed the truthiness check for the success value
         // Reset form fields
         setName("");
         setEmail("");
@@ -171,39 +155,18 @@ export function AddUserDialog({
         <form onSubmit={handleSubmit}>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label htmlFor="name">{t("name") || "الاسم"} <span className="text-red-500">*</span></Label>
-              <Input 
-                id="name" 
-                value={name} 
-                onChange={e => setName(e.target.value)} 
-                required 
-                placeholder="أدخل الاسم الكامل"
-              />
+              <Label htmlFor="name">{t("name") || "الاسم"}</Label>
+              <Input id="name" value={name} onChange={e => setName(e.target.value)} required />
             </div>
             
             <div className="grid gap-2">
-              <Label htmlFor="email">{t("email") || "البريد الإلكتروني"} <span className="text-red-500">*</span></Label>
-              <Input 
-                id="email" 
-                type="email" 
-                value={email} 
-                onChange={e => setEmail(e.target.value)} 
-                required 
-                placeholder="example@domain.com"
-              />
+              <Label htmlFor="email">{t("email") || "البريد الإلكتروني"}</Label>
+              <Input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} required />
             </div>
             
             <div className="grid gap-2">
-              <Label htmlFor="password">{t("password") || "كلمة المرور"} <span className="text-red-500">*</span></Label>
-              <Input 
-                id="password" 
-                type="password" 
-                value={password} 
-                onChange={e => setPassword(e.target.value)} 
-                required 
-                minLength={6}
-                placeholder="على الأقل 6 أحرف"
-              />
+              <Label htmlFor="password">{t("password") || "كلمة المرور"}</Label>
+              <Input id="password" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
             </div>
             
             <div className="grid gap-2">
@@ -237,27 +200,13 @@ export function AddUserDialog({
             ) : (
               <div className="grid gap-2">
                 <Label htmlFor="credits">{t("credit") || "الرصيد"}</Label>
-                <Input 
-                  id="credits" 
-                  type="number" 
-                  value={credits} 
-                  onChange={e => setCredits(e.target.value)} 
-                  required 
-                  min="0"
-                  placeholder="0"
-                />
+                <Input id="credits" type="number" value={credits} onChange={e => setCredits(e.target.value)} required />
               </div>
             )}
             
             <div className="grid gap-2">
-              <Label htmlFor="phone">{t("phone") || "رقم الهاتف"} <span className="text-red-500">*</span></Label>
-              <Input 
-                id="phone" 
-                value={phone} 
-                onChange={e => setPhone(e.target.value)} 
-                required 
-                placeholder="+966xxxxxxxxx"
-              />
+              <Label htmlFor="phone">{t("phone") || "رقم الهاتف"}</Label>
+              <Input id="phone" value={phone} onChange={e => setPhone(e.target.value)} required />
             </div>
             
             <div className="grid gap-2">
@@ -281,11 +230,6 @@ export function AddUserDialog({
             <Button type="submit" disabled={loading}>
               {loading ? (t("adding") || "جاري الإضافة...") : (t("addUser") || "إضافة المستخدم")}
             </Button>
-            <DialogClose asChild>
-              <Button type="button" variant="outline" disabled={loading}>
-                {t("cancel") || "إلغاء"}
-              </Button>
-            </DialogClose>
           </DialogFooter>
         </form>
       </DialogContent>

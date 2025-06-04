@@ -1,4 +1,3 @@
-
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/components/ui/sonner";
@@ -114,56 +113,27 @@ export const useUserOperations = () => {
     }
     
     try {
-      console.log("Attempting to create new user:", {
-        email: newUser.Email,
-        userType: newUser.User_Type,
-        country: newUser.Country
-      });
+      console.log("Attempting to create new user:", newUser.Email);
       
-      // First, create the auth user using Admin API
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      const { data: authData, error: authError } = await supabase.auth.signUp({
         email: newUser.Email,
-        password: newUser.Password,
-        email_confirm: true, // Skip email confirmation
-        user_metadata: {
-          name: newUser.Name || ''
-        }
+        password: newUser.Password
       });
       
       if (authError) {
         console.error("Auth error:", authError);
-        throw new Error(`فشل في إنشاء المستخدم: ${authError.message}`);
+        throw new Error(authError.message);
       }
       
       if (!authData.user) {
         console.error("No user returned from auth signup");
-        throw new Error("فشل في إنشاء مستخدم المصادقة");
+        throw new Error("Failed to create auth user");
       }
       
       const userId = authData.user.id;
       console.log("Auth user created successfully with ID:", userId);
       
-      // Calculate expiry time correctly
-      let expiryTime = null;
-      if (newUser.User_Type === "Monthly License") {
-        // For monthly license, calculate actual expiry date
-        const startDate = new Date();
-        const expiryDate = new Date(startDate);
-        
-        // Extract months from subscription period (default to 3 if not specified)
-        const months = newUser.subscriptionMonths ? parseInt(newUser.subscriptionMonths) : 3;
-        expiryDate.setMonth(expiryDate.getMonth() + months);
-        
-        expiryTime = expiryDate.toISOString().split('T')[0];
-        console.log(`Monthly license expiry set to: ${expiryTime} (${months} months)`);
-      } else {
-        // For credits license, set to null (unlimited)
-        expiryTime = null;
-        console.log("Credits license - no expiry date");
-      }
-      
-      // Insert user data into the users table with corrected values
-      const userData = {
+      const { error: userError } = await supabase.from('users').insert({
         id: userId,
         uid: userId,
         email: newUser.Email,
@@ -171,48 +141,33 @@ export const useUserOperations = () => {
         name: newUser.Name || '',
         phone: newUser.Phone || '',
         country: newUser.Country,
-        activate: 'Active', // Changed from 'Activate' to 'Active'
+        activate: 'Activate',
         block: newUser.Block || 'Not Blocked',
         credits: newUser.Credits || '0.0',
         user_type: newUser.User_Type,
         email_type: 'User',
-        expiry_time: expiryTime,
+        expiry_time: newUser.Expiry_Time,
         start_date: new Date().toISOString().split('T')[0],
         hwid: 'Null'
-      };
-      
-      console.log("Inserting user data:", userData);
-      
-      const { error: userError } = await supabase
-        .from('users')
-        .insert(userData);
+      });
 
       if (userError) {
         console.error("User data error:", userError);
-        
-        // Cleanup: delete the auth user if we failed to insert user data
-        try {
-          await supabase.auth.admin.deleteUser(userId);
-          console.log("Cleaned up auth user after failed user data insertion");
-        } catch (cleanupError) {
-          console.error("Failed to clean up auth user:", cleanupError);
-        }
-        
-        throw new Error(`فشل في حفظ بيانات المستخدم: ${userError.message}`);
+        throw new Error("Failed to add user data: " + userError.message);
       }
       
       console.log("User data added successfully");
       
-      toast(t("addSuccess") || "تم بنجاح", {
-        description: t("addUserSuccess") || "تم إضافة المستخدم بنجاح"
+      toast(t("addSuccess"), {
+        description: t("addUserSuccess")
       });
       
       queryClient.invalidateQueries({ queryKey: ['users'] });
       return true;
     } catch (error) {
       console.error("Error adding user:", error);
-      toast(t("error") || "خطأ", {
-        description: error instanceof Error ? error.message : "فشل في إضافة المستخدم"
+      toast(t("error") || "Error", {
+        description: error instanceof Error ? error.message : "Failed to add user"
       });
       return false;
     }
