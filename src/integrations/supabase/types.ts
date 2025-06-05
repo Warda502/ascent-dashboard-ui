@@ -75,41 +75,6 @@ export type Database = {
         }
         Relationships: []
       }
-      distributors: {
-        Row: {
-          commission_rate: string | null
-          facebook: string | null
-          id: string
-          permissions: string | null
-          uid: string | null
-          website: string | null
-        }
-        Insert: {
-          commission_rate?: string | null
-          facebook?: string | null
-          id?: string
-          permissions?: string | null
-          uid?: string | null
-          website?: string | null
-        }
-        Update: {
-          commission_rate?: string | null
-          facebook?: string | null
-          id?: string
-          permissions?: string | null
-          uid?: string | null
-          website?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "distributors_uid_fkey"
-            columns: ["uid"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       groups: {
         Row: {
           inserted_at: string | null
@@ -257,54 +222,6 @@ export type Database = {
         }
         Relationships: []
       }
-      server_history: {
-        Row: {
-          amount: number | null
-          distributor_id: string
-          id: string
-          operation_details: Json
-          operation_type: string
-          status: string
-          target_user_id: string | null
-          timestamp: string
-        }
-        Insert: {
-          amount?: number | null
-          distributor_id: string
-          id?: string
-          operation_details?: Json
-          operation_type: string
-          status?: string
-          target_user_id?: string | null
-          timestamp?: string
-        }
-        Update: {
-          amount?: number | null
-          distributor_id?: string
-          id?: string
-          operation_details?: Json
-          operation_type?: string
-          status?: string
-          target_user_id?: string | null
-          timestamp?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "server_history_distributor_id_fkey"
-            columns: ["distributor_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "server_history_target_user_id_fkey"
-            columns: ["target_user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       settings: {
         Row: {
           key: string
@@ -416,7 +333,6 @@ export type Database = {
           block: string | null
           country: string | null
           credits: string | null
-          distributor_id: string | null
           email: string
           email_type: string | null
           expiry_time: string | null
@@ -437,7 +353,6 @@ export type Database = {
           block?: string | null
           country?: string | null
           credits?: string | null
-          distributor_id?: string | null
           email: string
           email_type?: string | null
           expiry_time?: string | null
@@ -458,7 +373,6 @@ export type Database = {
           block?: string | null
           country?: string | null
           credits?: string | null
-          distributor_id?: string | null
           email?: string
           email_type?: string | null
           expiry_time?: string | null
@@ -505,6 +419,10 @@ export type Database = {
         Args: { user_id: string }
         Returns: undefined
       }
+      get_user_distributor_id: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
       increment_counter: {
         Args: Record<PropertyKey, never>
         Returns: number
@@ -515,6 +433,10 @@ export type Database = {
       }
       is_distributor: {
         Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
+      update_distributor_balance: {
+        Args: { distributor_id: string; amount: number }
         Returns: boolean
       }
       verify_login_status: {
